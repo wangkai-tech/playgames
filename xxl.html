@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简易消消乐</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+        .game-container {
+            text-align: center;
+            margin: 20px;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(6, 60px);
+            gap: 5px;
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .tile {
+            width: 60px;
+            height: 60px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .tile:hover {
+            transform: scale(1.05);
+        }
+        .controls {
+            margin: 15px 0;
+            display: flex;
+            gap: 20px;
+        }
+        .control-item {
+            background: #fff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>简易消消乐</h1>
+        <div class="controls">
+            <div class="control-item">
+                得分: <span id="score">0</span>
+            </div>
+            <div class="control-item">
+                时间: <span id="time">60</span>
+            </div>
+        </div>
+        <div class="board" id="board"></div>
+        <button onclick="startGame()">开始游戏</button>
+    </div>
+
+    <div class="overlay" id="startOverlay">
+        <h2>点击开始游戏</h2>
+        <button onclick="startGame()">开始</button>
+    </div>
+
+    <script>
+        const colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange'];
+        let board = [];
+        let score = 0;
+        let timeLeft = 60;
+        let timer;
+        let isPlaying = false;
+        let selectedTile = null;
+
+        // 初始化棋盘
+        function initBoard() {
+            board = [];
+            const boardElement = document.getElementById('board');
+            boardElement.innerHTML = '';
+
+            for (let i = 0; i < 6; i++) {
+                board[i] = [];
+                for (let j = 0; j < 6; j++) {
+                    // 随机颜色，但避免初始匹配
+                    let color;
+                    do {
+                        color = colors[Math.floor(Math.random() * colors.length)];
+                    } while (hasInitialMatch(i, j, color));
+
+                    board[i][j] = color;
+                    const tile = document.createElement('div');
+                    tile.className = 'tile';
+                    tile.style.backgroundColor = color;
+                    tile.dataset.row = i;
+                    tile.dataset.col = j;
+                    tile.onclick = () => selectTile(i, j);
+                    boardElement.appendChild(tile);
+                }
+            }
+        }
+
+        // 检查初始是否有匹配（避免一开局就有可消除的）
+        function hasInitialMatch(row, col, color) {
+            // 检查水平方向
+            if (col >= 2 && board[row][col-1] === color && board[row][col-2] === color) {
+                return true;
+            }
+            // 检查垂直方向
+            if (row >= 2 && board[row-1][col] === color && board[row-2][col] === color) {
+                return true;
+            }
+            return false;
+        }
+
+        // 选择方块
+        function selectTile(row, col) {
+            if (!isPlaying) return;
+
+            if (!selectedTile) {
+                selectedTile = {row, col};
+                highlightTile(row, col, true);
+            } else {
+                const {row: r, col: c} = selectedTile;
+                // 检查是否相邻
+                if (isAdjacent(r, c, row, col)) {
+                    // 交换方块
+                    swapTiles(r, c, row, col);
+                    // 检查是否有匹配
+                    if (checkMatches()) {
+                        // 有匹配，处理消除
+                        setTimeout(() => {
+                            removeMatches();
+                            dropTiles();
+                            fillEmptyTiles();
+                            // 检查是否有新匹配
+                            setTimeout(() => {
+                                if (checkMatches()) {
+                                    removeMatches();
+                                    dropTiles();
+                                    fillEmptyTiles();
+                                }
+                            }, 500);
+                        }, 300);
+                    } else {
+                        // 无匹配，交换回来
+                        setTimeout(() => swapTiles(row, col, r, c), 300);
+                    }
+                }
+                highlightTile(r, c, false);
+                selectedTile = null;
+            }
+        }
+
+        // 检查是否相邻
+        function isAdjacent(r1, c1, r2, c2) {
+            return (Math.abs(r1 - r2) === 1 && c1 === c2) || 
+                   (Math.abs(c1 - c2) === 1 && r1 === r2);
+        }
+
+        // 交换方块
+        function swapTiles(r1, c1, r2, c2) {
+            [board[r1][c1], board[r2][c2]] = [board[r2][c2], board[r1][c1]];
+            updateBoard();
+        }
+
+        // 检查匹配
+        function checkMatches() {
+            let hasMatch = false;
+            // 标记匹配的方块
+            for (let i = 0; i < 6; i++) {
+                for (let j = 0; j < 6; j++) {
+                    const color = board[i][j];
+                    // 水平匹配
+                    if (j + 2 < 6 && color && 
+                        board[i][j+1] === color && 
+                        board[i][j+2] === color) {
+                        hasMatch = true;
+                        markForRemoval(i, j, i, j+2);
+                    }
+                    // 垂直匹配
+                    if (i + 2 < 6 && color && 
+                        board[i+1][j] === color && 
+                        board[i+2][j] === color) {
+                        hasMatch = true;
+                        markForRemoval(i, j, i+2, j);
+                    }
+                }
+            }
+            return hasMatch;
+        }
+
+        // 标记要消除的方块
+        function markForRemoval(r1, c1, r2, c2) {
+            for (let i = r1; i <= r2; i++) {
+                for (let j = c1; j <= c2; j++) {
+                    board[i][j] = null; // 用null标记要消除
+                    score += 10;
+                    document.getElementById('score').textContent = score;
+                }
+            }
+        }
+
+        // 移除匹配的方块
+        function removeMatches() {
+            updateBoard();
+        }
+
+        // 方块下落
+        function dropTiles() {
+            for (let j = 0; j < 6; j++) {
+                for (let i = 5; i > 0; i--) {
+                    if (!board[i][j]) {
+                        // 找上方第一个非空方块
+                        for (let k = i-1; k >= 0; k--) {
+                            if (board[k][j]) {
+                                board[i][j] = board[k][j];
+                                board[k][j] = null;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            updateBoard();
+        }
+
+        // 填充空白方块
+        function fillEmptyTiles() {
+            for (let i = 0; i < 6; i++) {
+                for (let j = 0; j < 6; j++) {
+                    if (!board[i][j]) {
+                        board[i][j] = colors[Math.floor(Math.random() * colors.length)];
+                    }
+                }
+            }
+            updateBoard();
+        }
+
+        // 更新棋盘显示
+        function updateBoard() {
+            const tiles = document.getElementsByClassName('tile');
+            let index = 0;
+            for (let i = 0; i < 6; i++) {
+                for (let j = 0; j < 6; j++) {
+                    const tile = tiles[index++];
+                    tile.style.backgroundColor = board[i][j] || 'transparent';
+                    tile.style.opacity = board[i][j] ? 1 : 0;
+                }
+            }
+        }
+
+        // 高亮选中的方块
+        function highlightTile(row, col, highlight) {
+            const tile = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+            if (highlight) {
+                tile.style.boxShadow = '0 0 0 3px yellow';
+            } else {
+                tile.style.boxShadow = 'none';
+            }
+        }
+
+        // 开始游戏
+        function startGame() {
+            document.getElementById('startOverlay').style.display = 'none';
+            score = 0;
+            timeLeft = 60;
+            document.getElementById('score').textContent = score;
+            document.getElementById('time').textContent = timeLeft;
+            initBoard();
+            isPlaying = true;
+            
+            clearInterval(timer);
+            timer = setInterval(() => {
+                timeLeft--;
+                document.getElementById('time').textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(timer);
+                    isPlaying = false;
+                    alert(`游戏结束！最终得分: ${score}`);
+                }
+            }, 1000);
+        }
+
+        // 初始化
+        initBoard();
+    </script>
+</body>
+</html>
